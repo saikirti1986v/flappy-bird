@@ -1,297 +1,207 @@
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const groundHeight = 30;
-let birdImageframe = 0;
-const flapInterval = 50;
-const birdGravity = 0.20;
-const birdJump = -4.6;
-const pipes = [];
-const pipeWidth = 52;
-const minGap = 110;
-const maxGap = 190;
-const pipeGap = Math.floor(Math.random() * (maxGap - minGap + 1) + minGap);
-let score = 0;
-let running = false;
+var ctx = myCanvas.getContext('2d');
+var FPS = 40;
+var jump_amount = -10;
+var max_fall_speed = +10;
+var acceleration = 1;
+var pipe_speed = -2;
+var game_mode = 'prestart';
+var time_game_last_running;
+var bottom_bar_offset = 0;
+var pipes = [];
 
-// Set canvas size
-canvas.width = 320;
-canvas.height = 480;
-
-const birdImg1 = new Image();
-birdImg1.src = "https://assets.codepen.io/1290466/flappy-bird-1.png?format=auto";
-const birdImg2 = new Image();
-birdImg2.src = "https://assets.codepen.io/1290466/flappy-bird-2.png?format=auto";
-const birdImg3 = new Image();
-birdImg3.src = "https://assets.codepen.io/1290466/flappy-bird-3.png?format=auto";
-const birdImg4 = new Image();
-birdImg4.src = "https://assets.codepen.io/1290466/flappy-bird-2.png?format=auto";
-const backgroundImg = new Image();
-backgroundImg.src = "https://assets.codepen.io/1290466/flappy-bird-bg-bottom.jpg?format=auto";
-const groundImg = new Image();
-groundImg.src = "https://assets.codepen.io/1290466/ground2.jpg?format=auto";
-const pipesBackgroundImg = new Image();
-pipesBackgroundImg.src = "https://assets.codepen.io/1290466/pipe-bg.jpg?format=auto";
-
-// Sounds
-const hitSound = new Audio("https://assets.codepen.io/1290466/flappy-bird-hit.mp3");
-const pointSound = new Audio("https://assets.codepen.io/1290466/flappy-bird-point.mp3");
-const backgroundMusic = new Audio("https://assets.codepen.io/1290466/flappy-bird-background.mp3");
-
-const drawBackground = function() {
-  ctx.fillStyle = "#71c4cc";
-  ctx.fillRect(0, 0, canvas.width, canvas.height - groundHeight);
-  ctx.drawImage(backgroundImg, 0, canvas.height - backgroundImg.height);
+function MySprite(img_url) {
+  this.x = 0;
+  this.y = 0;
+  this.visible = true;
+  this.velocity_x = 0;
+  this.velocity_y = 0;
+  this.MyImg = new Image();
+  this.MyImg.src = img_url || '';
+  this.angle = 0;
+  this.flipV = false;
+  this.flipH = false;
+}
+MySprite.prototype.Do_Frame_Things = function () {
+  ctx.save();
+  ctx.translate(this.x + this.MyImg.width / 2, this.y + this.MyImg.height / 2);
+  ctx.rotate((this.angle * Math.PI) / 180);
+  if (this.flipV) ctx.scale(1, -1);
+  if (this.flipH) ctx.scale(-1, 1);
+  if (this.visible)
+    ctx.drawImage(this.MyImg, -this.MyImg.width / 2, -this.MyImg.height / 2);
+  this.x = this.x + this.velocity_x;
+  this.y = this.y + this.velocity_y;
+  ctx.restore();
 };
-
-const scoreElement = document.createElement("span")
-scoreElement.textContent = 0;
-scoreElement.style.position = "absolute";
-scoreElement.style.left = "50%";
-scoreElement.style.top = "35px";
-scoreElement.style.transform = "translate(-50%, -50%)";
-document.body.appendChild(scoreElement);
-
-// Create the bird object
-const bird = {
-  x: 50,
-  y: canvas.height / 2,
-  width: 42,
-  height: 30,
-  speed: 0,
-  gravity: birdGravity,
-  jump: birdJump,
-  update: function() {
-    this.speed += this.gravity;
-    this.y += this.speed;
-  },
-  draw: function() {
-    // Rotate the bird up when it goes up
-    if (this.speed < 0) {
-      ctx.save();
-      ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
-      ctx.rotate(-Math.PI / 16);
-      
-      // bird flap animation
-      if (birdImageframe % 3 === 0) {
-        ctx.drawImage(birdImg1, -this.width / 2, -this.height / 2, this.width, this.height);
-      } else if (birdImageframe % 3 === 1) {
-        ctx.drawImage(birdImg2, -this.width / 2, -this.height / 2, this.width, this.height);
-      } else if (birdImageframe % 3 === 2) {
-        ctx.drawImage(birdImg3, -this.width / 2, -this.height / 2, this.width, this.height);
-      } else {
-        ctx.drawImage(birdImg4, -this.width / 2, -this.height / 2, this.width, this.height);
+function ImagesTouching(thing1, thing2) {
+  if (!thing1.visible || !thing2.visible) return false;
+  if (
+    thing1.x >= thing2.x + thing2.MyImg.width ||
+    thing1.x + thing1.MyImg.width <= thing2.x
+  )
+    return false;
+  if (
+    thing1.y >= thing2.y + thing2.MyImg.height ||
+    thing1.y + thing1.MyImg.height <= thing2.y
+  )
+    return false;
+  return true;
+}
+function Got_Player_Input(MyEvent) {
+  switch (game_mode) {
+    case 'prestart': {
+      game_mode = 'running';
+      break;
+    }
+    case 'running': {
+      bird.velocity_y = jump_amount;
+      break;
+    }
+    case 'over':
+      if (new Date() - time_game_last_running > 1000) {
+        reset_game();
+        game_mode = 'running';
+        break;
       }
-      
-      ctx.restore();
-    }
-    // Rotate the bird down when it goes down
-    else {
-      ctx.save();
-      ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
-      ctx.rotate(Math.PI / 16);
-      // ctx.drawImage(birdImg1, -this.width / 2, -this.height / 2, this.width, this.height);
-      
-      // bird flap animation
-      if (birdImageframe % 3 === 0) {
-        ctx.drawImage(birdImg1, -this.width / 2, -this.height / 2, this.width, this.height);
-      } else if (birdImageframe % 3 === 1) {
-        ctx.drawImage(birdImg2, -this.width / 2, -this.height / 2, this.width, this.height);
-      } else if (birdImageframe % 3 === 2) {
-        ctx.drawImage(birdImg3, -this.width / 2, -this.height / 2, this.width, this.height);
-      } else {
-        ctx.drawImage(birdImg4, -this.width / 2, -this.height / 2, this.width, this.height);
-      }
-      
-      ctx.restore();
-    }
   }
-};
-
-const ground = {
-  x: 0,
-  y: canvas.height - groundHeight,
-  width: canvas.width,
-  height: groundHeight,
-  speed: 1,
-  update: function() {
-    this.x -= this.speed;
-    if (this.x <= -this.width) this.x = 0;
-  },
-  draw: function() {
-    ctx.drawImage(groundImg, this.x, this.y, this.width, this.height);
-    ctx.drawImage(groundImg, this.x + this.width, this.y, this.width, this.height);
+  MyEvent.preventDefault();
+}
+addEventListener('touchstart', Got_Player_Input);
+addEventListener('mousedown', Got_Player_Input);
+addEventListener('keydown', Got_Player_Input);
+function make_bird_slow_and_fall() {
+  if (bird.velocity_y < max_fall_speed) {
+    bird.velocity_y = bird.velocity_y + acceleration;
   }
-};
-
-const addPipe = function() {
-  const height = Math.floor(Math.random() * canvas.height / 2) + 50;
-  const y = height - pipeGap / 2;
-  pipes.push({
-    x: canvas.width,
-    y: y,
-    width: pipeWidth,
-    height: height
-  });
-};
-
-setInterval(function() {
-  birdImageframe++;
-}, flapInterval);
-
-addPipe();
-
-// Listen for clicks to make the bird jump
-canvas.addEventListener("click", function() {
-  bird.speed = bird.jump;
-});
-
-// Listen for sparebar press to make the bird jump
-document.addEventListener("keydown", function(event) {
-  if (event.keyCode === 32) {
-    bird.speed = bird.jump;
+  if (bird.y > myCanvas.height - bird.MyImg.height) {
+    bird.velocity_y = 0;
+    game_mode = 'over';
   }
-});
+  if (bird.y < 0 - bird.MyImg.height) {
+    bird.velocity_y = 0;
+    game_mode = 'over';
+  }
+}
 
-const playBtn = document.createElement("button")
-playBtn.innerText = "Play";
-playBtn.style.position = "absolute";
-playBtn.style.left = "50%";
-playBtn.style.top = "50%";
-playBtn.style.transform = "translate(-50%, -50%)";
-playBtn.addEventListener("click", function() {
-  document.body.removeChild(playBtn);
-  document.body.removeChild(helpText);
-  running = true;
-  // Set game variables
-  score = 0;
-  pipes.length = 0;
-  addPipe();
-  gameLoop();
-
-  backgroundMusic.loop = true;
-  backgroundMusic.play();
-});
-
-document.body.appendChild(playBtn);
-
-const helpText = document.createElement("p")
-helpText.innerHTML = "TAP to jump on Mobile <br /><br /> SPACEBAR to jump on Destop";
-helpText.style.position = "absolute";
-helpText.style.left = "50%";
-helpText.style.top = "75%";
-helpText.style.transform = "translate(-50%, -50%)";
-document.body.appendChild(helpText);
-
-// The game loop
-const gameLoop = function() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ground.draw();
-  drawBackground();
-  
-  if (!running) return;
-  
-  bird.update();
-  bird.draw();
-
-  // Draw and update pipes
-  for (let i = 0; i < pipes.length; i++) {
-    // ctx.fillStyle = ctx.createPattern(pipesBackgroundImg, "repeat");  
-    ctx.fillRect(pipes[i].x, 0, pipes[i].width, pipes[i].y);
-    ctx.fillRect(pipes[i].x, pipes[i].y + pipeGap, pipes[i].width, canvas.height - pipes[i].y - pipeGap);
-    
-    // Top pipe
-    ctx.beginPath();
-    ctx.strokeStyle = "#618842";
-    ctx.lineWidth = 4;
-    ctx.moveTo(pipes[i].x, pipes[i].y);
-    ctx.lineTo(pipes[i].x + pipes[i].width, pipes[i].y);
-    ctx.stroke();
-    ctx.drawImage(pipesBackgroundImg, pipes[i].x, 0, pipes[i].width, pipes[i].y);
-    
-    // Bottom pipe
-    ctx.beginPath();
-    ctx.strokeStyle = "#618842";
-    ctx.lineWidth = 4;
-    ctx.moveTo(pipes[i].x, pipes[i].y + pipeGap);
-    ctx.lineTo(pipes[i].x + pipes[i].width, pipes[i].y + pipeGap);
-    ctx.stroke();
-    ctx.drawImage(pipesBackgroundImg, pipes[i].x, pipes[i].y + pipeGap, pipes[i].width, canvas.height - pipes[i].y - pipeGap - groundHeight);
-   
-    pipes[i].x -= 1;
-
-    // if game over / Check for collisions
-    if (
-      bird.x < pipes[i].x + pipes[i].width &&
-      bird.x + bird.width > pipes[i].x &&
-      (bird.y < pipes[i].y || bird.y + bird.height > pipes[i].y + pipeGap)
-    ) {
-      running = false;
-      
-      hitSound.play();
- 
-      ground.draw();
-      
-      backgroundMusic.pause();
-      backgroundMusic.currentTime = 0;
-      
-      console.log("Game Over!");
-      
-      const replayBtn = document.createElement("button")
- 
-      replayBtn.innerText = "Replay";
-      replayBtn.style.position = "absolute";
-      replayBtn.style.left = "50%";
-      replayBtn.style.top = "50%";
-      replayBtn.style.transform = "translate(-50%, -50%)";
-      replayBtn.addEventListener("click", function() {
-        document.body.removeChild(replayBtn);
-        running = true;
-        // Reset game variables to their initial values
-        score = 0;
-        pipes.length = 0;
-        addPipe();
-        gameLoop();
-        
-        backgroundMusic.loop = true;
-        backgroundMusic.play();
-      });
-
-      document.body.appendChild(replayBtn);
-      
-      return;
+function add_pipe(x_pos, top_of_gap, gap_width) {
+  var top_pipe = new MySprite();
+  top_pipe.MyImg = pipe_piece;
+  top_pipe.x = x_pos;
+  top_pipe.y = top_of_gap - pipe_piece.height;
+  top_pipe.velocity_x = pipe_speed;
+  pipes.push(top_pipe);
+  var bottom_pipe = new MySprite();
+  bottom_pipe.MyImg = pipe_piece;
+  bottom_pipe.flipV = true;
+  bottom_pipe.x = x_pos;
+  bottom_pipe.y = top_of_gap + gap_width;
+  bottom_pipe.velocity_x = pipe_speed;
+  pipes.push(bottom_pipe);
+}
+function make_bird_tilt_appropriately() {
+  if (bird.velocity_y < 0) {
+    bird.angle = -15;
+  } else if (bird.angle < 70) {
+    bird.angle = bird.angle + 4;
+  }
+}
+function show_the_pipes() {
+  for (var i = 0; i < pipes.length; i++) {
+    pipes[i].Do_Frame_Things();
+  }
+}
+function check_for_end_game() {
+  for (var i = 0; i < pipes.length; i++)
+    if (ImagesTouching(bird, pipes[i])) game_mode = 'over';
+}
+function display_intro_instructions() {
+  ctx.font = '25px Arial';
+  ctx.fillStyle = 'red';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    'Press, touch or click to start',
+    myCanvas.width / 2,
+    myCanvas.height / 4
+  );
+}
+function display_game_over() {
+  var score = 0;
+  for (var i = 0; i < pipes.length; i++)
+    if (pipes[i].x < bird.x) score = score + 0.5;
+  ctx.font = '30px Arial';
+  ctx.fillStyle = 'red';
+  ctx.textAlign = 'center';
+  ctx.fillText('Game Over', myCanvas.width / 2, 100);
+  ctx.fillText('Score: ' + score, myCanvas.width / 2, 150);
+  ctx.font = '20px Arial';
+  ctx.fillText('Click, touch, or press to play again', myCanvas.width / 2, 300);
+}
+function display_bar_running_along_bottom() {
+  if (bottom_bar_offset < -23) bottom_bar_offset = 0;
+  ctx.drawImage(
+    bottom_bar,
+    bottom_bar_offset,
+    myCanvas.height - bottom_bar.height
+  );
+}
+function reset_game() {
+  bird.y = myCanvas.height / 2;
+  bird.angle = 0;
+  pipes = []; // erase all the pipes from the array
+  add_all_my_pipes(); // and load them back in their starting positions
+}
+function add_all_my_pipes() {
+  add_pipe(500, 100, 140);
+  add_pipe(800, 50, 140);
+  add_pipe(1000, 250, 140);
+  add_pipe(1200, 150, 120);
+  add_pipe(1600, 100, 120);
+  add_pipe(1800, 150, 120);
+  add_pipe(2000, 200, 120);
+  add_pipe(2200, 250, 120);
+  add_pipe(2400, 30, 100);
+  add_pipe(2700, 300, 100);
+  add_pipe(3000, 100, 80);
+  add_pipe(3300, 250, 80);
+  add_pipe(3600, 50, 60);
+  var finish_line = new MySprite('http://s2js.com/img/etc/flappyend.png');
+  finish_line.x = 3900;
+  finish_line.velocity_x = pipe_speed;
+  pipes.push(finish_line);
+}
+var pipe_piece = new Image();
+pipe_piece.onload = add_all_my_pipes;
+pipe_piece.src = 'http://s2js.com/img/etc/flappypipe.png';
+function Do_a_Frame() {
+  ctx.clearRect(0, 0, myCanvas.width, myCanvas.height);
+  bird.Do_Frame_Things();
+  display_bar_running_along_bottom();
+  switch (game_mode) {
+    case 'prestart': {
+      display_intro_instructions();
+      break;
     }
-    
-    // Check if bird has passed the pipe and add point to score
-    if (bird.x > pipes[i].x + pipes[i].width && !pipes[i].passed) {
-      pipes[i].passed = true;
-      pointSound.play();
-      score++;
+    case 'running': {
+      time_game_last_running = new Date();
+      bottom_bar_offset = bottom_bar_offset + pipe_speed;
+      show_the_pipes();
+      make_bird_tilt_appropriately();
+      make_bird_slow_and_fall();
+      check_for_end_game();
+      break;
     }
-
-    // Add a new pipe when the current pipe has moved off the screen
-    if (pipes[i].x + pipes[i].width < 0) {
-      pipes.splice(i, 1);
-      i--;
-      addPipe();
+    case 'over': {
+      make_bird_slow_and_fall();
+      display_game_over();
+      break;
     }
   }
-  
-  ground.update();
-  ground.draw();
-  
-  scoreElement.textContent = score;
-  
+}
+var bottom_bar = new Image();
+bottom_bar.src = 'http://s2js.com/img/etc/flappybottom.png';
 
-  // Keep the bird within the bounds of the canvas
-  if (bird.y + bird.height > canvas.height - groundHeight) {
-    bird.y = canvas.height - groundHeight - bird.height;
-    bird.speed = 0;
-  } else if (bird.y < 0) {
-    bird.y = 0;
-    bird.speed = 0;
-  }
+var bird = new MySprite('http://s2js.com/img/etc/flappybird.png');
+bird.x = myCanvas.width / 3;
+bird.y = myCanvas.height / 2;
 
-  requestAnimationFrame(gameLoop);
-};
-
-gameLoop();
+setInterval(Do_a_Frame, 1000 / FPS);          
